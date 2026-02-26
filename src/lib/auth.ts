@@ -7,14 +7,14 @@ import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
 async function getArgon2() {
-  return import('@node-rs/argon2');
+  return import('argon2');
 }
 
 // Password hashing with Argon2id
 export async function hashPassword(password: string): Promise<string> {
   const argon2 = await getArgon2();
   return argon2.hash(password, {
-    algorithm: argon2.Algorithm.Argon2id,
+    type: argon2.argon2id,
     memoryCost: 65536,
     timeCost: 3,
     parallelism: 4,
