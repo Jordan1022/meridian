@@ -57,11 +57,12 @@ function getHeader(
   name: string
 ): string | undefined {
   if (!headers) return undefined
-  if ('get' in headers && typeof headers.get === 'function') {
+  if (headers instanceof Headers) {
     return headers.get(name) ?? undefined
   }
 
-  const value = headers[name] ?? headers[name.toLowerCase()]
+  const headerMap = headers as Record<string, string | string[] | undefined>
+  const value = headerMap[name] ?? headerMap[name.toLowerCase()]
   if (Array.isArray(value)) return value[0]
   return value
 }
