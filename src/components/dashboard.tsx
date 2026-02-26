@@ -25,6 +25,8 @@ export function Dashboard() {
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [dueLeads, setDueLeads] = useState<Lead[]>([]);
+  const [leadsError, setLeadsError] = useState<string | null>(null);
+  const [dueError, setDueError] = useState<string | null>(null);
   const [view, setView] = useState<'kanban' | 'table'>('kanban');
   const [dueView, setDueView] = useState<'week' | 'month'>('week');
   const [dueOffset, setDueOffset] = useState(0);
@@ -58,12 +60,25 @@ export function Dashboard() {
   async function fetchLeads() {
     try {
       const response = await fetch('/api/leads');
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         setLeads(data.leads);
+        setLeadsError(null);
+        return;
       }
+
+      const message = await getErrorMessage(response);
+      setLeads([]);
+      setLeadsError(`Unable to load leads (${response.status}): ${message}`);
     } catch (error) {
       console.error('Failed to fetch leads:', error);
+      setLeads([]);
+      setLeadsError('Unable to load leads due to a network error.');
     }
   }
 
@@ -71,13 +86,28 @@ export function Dashboard() {
     try {
       const days = dueView === 'month' ? 30 : 7;
       const response = await fetch(`/api/due?days=${days}&offset=${dueOffset}`);
+      if (response.status === 401) {
+        router.push('/login');
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         setDueLeads(data.leads);
         setDueDateRange({ start: data.startDate, end: data.endDate });
+        setDueError(null);
+        return;
       }
+
+      const message = await getErrorMessage(response);
+      setDueLeads([]);
+      setDueDateRange(null);
+      setDueError(`Unable to load due actions (${response.status}): ${message}`);
     } catch (error) {
       console.error('Failed to fetch due leads:', error);
+      setDueLeads([]);
+      setDueDateRange(null);
+      setDueError('Unable to load due actions due to a network error.');
     }
   }
 
@@ -169,6 +199,29 @@ export function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {(leadsError || dueError) && (
+          <section className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-red-300">Data sync issue</p>
+                {leadsError && <p className="text-sm text-red-200 mt-1">{leadsError}</p>}
+                {dueError && <p className="text-sm text-red-200 mt-1">{dueError}</p>}
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  fetchLeads();
+                  fetchDueLeads();
+                  fetchCsrfToken();
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          </section>
+        )}
+
         {/* Due Panel */}
         <section className="mb-8">
           <div className="flex items-center justify-between mb-4">
@@ -316,6 +369,22 @@ export function Dashboard() {
       />
     </div>
   );
+}
+
+async function getErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    if (typeof data?.error === 'string' && data.error.length > 0) {
+      return data.error;
+    }
+    if (typeof data?.details === 'string' && data.details.length > 0) {
+      return data.details;
+    }
+  } catch {
+    // Ignore non-JSON responses and fall back to status text.
+  }
+
+  return response.statusText || 'Unknown error';
 }
 
 function DueLeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {

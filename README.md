@@ -97,17 +97,19 @@ sudo apt install unattended-upgrades
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string with TLS | `postgres://user:pass@host:5432/db?sslmode=require` |
-| `SESSION_SECRET` | Yes | Iron session password (min 32 chars) | `complex_random_string_32_chars_plus` |
-| `INTERNAL_API_TOKEN` | Yes | Token for CLI/script access | `secure_random_token_for_scripts` |
+| `NEXTAUTH_SECRET` | Yes | Secret used to sign/verify NextAuth JWT sessions | `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | Yes (prod) | Canonical app URL for auth callbacks/cookies | `https://pipeline-brain.vercel.app` |
+| `OPENCLAW_TOKEN` | Yes (for CLI scripts) | Token for internal script/API access | `secure_random_token_for_scripts` |
+| `APP_URL` | Recommended | CORS allow-origin used by API middleware | `https://pipeline-brain.vercel.app` |
 | `NODE_ENV` | No | Environment mode | `production` |
 
 ### Generating Secrets
 
 ```bash
-# SESSION_SECRET (must be at least 32 characters)
+# NEXTAUTH_SECRET
 openssl rand -base64 32
 
-# INTERNAL_API_TOKEN
+# OPENCLAW_TOKEN
 openssl rand -hex 32
 ```
 
@@ -147,8 +149,9 @@ You'll be prompted to create an admin email and password.
 ```bash
 # Set required env vars
 export DATABASE_URL="..."
-export SESSION_SECRET="..."
-export INTERNAL_API_TOKEN="..."
+export NEXTAUTH_SECRET="..."
+export NEXTAUTH_URL="http://localhost:3000"
+export OPENCLAW_TOKEN="..."
 
 # Run dev server
 npm run dev
@@ -158,9 +161,9 @@ npm run dev
 
 ```bash
 # Build for production
-DATABASE_URL="dummy" SESSION_SECRET="dummy" npm run build
+DATABASE_URL="dummy" NEXTAUTH_SECRET="dummy" npm run build
 
-# The actual DATABASE_URL and SESSION_SECRET are only needed at runtime
+# The real DATABASE_URL and NEXTAUTH_SECRET are required at runtime
 ```
 
 ## Database Migrations
@@ -376,7 +379,7 @@ vercel --prod
 
 **Required Environment Variables in Vercel:**
 1. Go to Project Settings → Environment Variables
-2. Add `DATABASE_URL`, `SESSION_SECRET`, and `INTERNAL_API_TOKEN`
+2. Add `DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `OPENCLAW_TOKEN`, and `APP_URL`
 3. Redeploy for changes to take effect
 
 ### Docker Deployment (Self-Hosted)
@@ -403,8 +406,10 @@ services:
       - "3000:3000"
     environment:
       - DATABASE_URL=postgres://user:pass@db:5432/meridian
-      - SESSION_SECRET=your_secret
-      - INTERNAL_API_TOKEN=your_token
+      - NEXTAUTH_SECRET=your_secret
+      - NEXTAUTH_URL=http://localhost:3000
+      - OPENCLAW_TOKEN=your_token
+      - APP_URL=http://localhost:3000
     depends_on:
       - db
   
@@ -424,9 +429,10 @@ volumes:
 ## API Reference
 
 ### Authentication Endpoints
-- `POST /api/auth/login` - Login with email/password
-- `POST /api/auth/logout` - Logout
+- `POST /api/auth/[...nextauth]` - NextAuth credentials callback/session routes
 - `GET /api/auth/me` - Get current session
+- `POST /api/auth/login` - Deprecated (returns 410)
+- `POST /api/auth/logout` - Legacy logout endpoint
 
 ### Lead Endpoints
 - `GET /api/leads` - List all leads (optionally filter by stage, search query)
