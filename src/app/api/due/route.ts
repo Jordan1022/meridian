@@ -3,8 +3,14 @@ import { db } from '@/lib/db';
 import { leads } from '@/lib/schema';
 import { requireAuth } from '@/lib/auth';
 import { lte, gte, and, isNotNull } from 'drizzle-orm';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
+
+const dueQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(7),
+  offset: z.coerce.number().int().min(-365).max(365).default(0),
+});
 
 // GET /api/due?days=7&offset=0
 export async function GET(request: NextRequest) {
@@ -12,8 +18,19 @@ export async function GET(request: NextRequest) {
     await requireAuth(request);
 
     const { searchParams } = new URL(request.url);
-    const days = parseInt(searchParams.get('days') || '7', 10);
-    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const queryResult = dueQuerySchema.safeParse({
+      days: searchParams.get('days') ?? '7',
+      offset: searchParams.get('offset') ?? '0',
+    });
+
+    if (!queryResult.success) {
+      return NextResponse.json(
+        { error: 'Invalid query parameters', details: queryResult.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const { days, offset } = queryResult.data;
 
     const start = new Date();
     start.setDate(start.getDate() + offset);

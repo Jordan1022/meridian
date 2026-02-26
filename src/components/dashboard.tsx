@@ -27,6 +27,7 @@ export function Dashboard() {
   const [dueLeads, setDueLeads] = useState<Lead[]>([]);
   const [leadsError, setLeadsError] = useState<string | null>(null);
   const [dueError, setDueError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [view, setView] = useState<'kanban' | 'table'>('kanban');
   const [dueView, setDueView] = useState<'week' | 'month'>('week');
   const [dueOffset, setDueOffset] = useState(0);
@@ -185,7 +186,13 @@ export function Dashboard() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Button onClick={handleAddLead} size="sm" className="bg-primary hover:bg-primary/90">
+              <Button
+                onClick={handleAddLead}
+                size="sm"
+                className="bg-primary hover:bg-primary/90"
+                disabled={!csrfToken}
+                title={!csrfToken ? 'Loading session…' : undefined}
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Lead
               </Button>
@@ -199,18 +206,20 @@ export function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {(leadsError || dueError) && (
+        {(leadsError || dueError || mutationError) && (
           <section className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-red-300">Data sync issue</p>
                 {leadsError && <p className="text-sm text-red-200 mt-1">{leadsError}</p>}
                 {dueError && <p className="text-sm text-red-200 mt-1">{dueError}</p>}
+                {mutationError && <p className="text-sm text-red-200 mt-1">{mutationError}</p>}
               </div>
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={() => {
+                  setMutationError(null);
                   fetchLeads();
                   fetchDueLeads();
                   fetchCsrfToken();
@@ -230,6 +239,9 @@ export function Dashboard() {
               <h2 className="text-lg font-semibold">
                 Due {dueDateRange ? `${format(new Date(dueDateRange.start), 'MMM d')} - ${format(new Date(dueDateRange.end), 'MMM d')}` : (dueView === 'month' ? 'This Month' : 'This Week')}
               </h2>
+              <span className="text-xs text-muted-foreground">
+                Subset of leads shown below
+              </span>
               <div className="flex gap-1 p-1 bg-secondary/50 rounded-lg ml-2">
                 <Button
                   variant={dueView === 'week' ? 'secondary' : 'ghost'}
@@ -349,6 +361,7 @@ export function Dashboard() {
               onLeadClick={handleLeadClick}
               onRefresh={fetchLeads}
               csrfToken={csrfToken}
+              onMutationError={setMutationError}
             />
           ) : (
             <LeadTable leads={leads} onLeadClick={handleLeadClick} />
@@ -366,6 +379,7 @@ export function Dashboard() {
           fetchDueLeads();
         }}
         csrfToken={csrfToken}
+        onMutationError={setMutationError}
       />
     </div>
   );

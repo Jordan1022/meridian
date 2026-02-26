@@ -19,9 +19,10 @@ interface KanbanBoardProps {
   onLeadClick: (lead: Lead) => void;
   onRefresh: () => void;
   csrfToken: string;
+  onMutationError: (message: string | null) => void;
 }
 
-export function KanbanBoard({ leads, onLeadClick, onRefresh, csrfToken }: KanbanBoardProps) {
+export function KanbanBoard({ leads, onLeadClick, onRefresh, csrfToken, onMutationError }: KanbanBoardProps) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const leadsByStage = STAGES.reduce((acc, stage) => {
@@ -31,6 +32,11 @@ export function KanbanBoard({ leads, onLeadClick, onRefresh, csrfToken }: Kanban
 
   async function handleDrop(stage: string, leadId: string) {
     setDraggingId(null);
+
+    if (!csrfToken) {
+      onMutationError('Session is still initializing. Please wait a moment and try again.');
+      return;
+    }
     
     try {
       const response = await fetch(`/api/leads/${leadId}`, {
@@ -40,9 +46,13 @@ export function KanbanBoard({ leads, onLeadClick, onRefresh, csrfToken }: Kanban
       });
 
       if (response.ok) {
+        onMutationError(null);
         onRefresh();
+      } else {
+        onMutationError(`Failed to update stage (${response.status}): ${await getErrorMessage(response)}`);
       }
     } catch (error) {
+      onMutationError('Failed to update stage due to a network error.');
       console.error('Failed to update lead stage:', error);
     }
   }
@@ -62,6 +72,19 @@ export function KanbanBoard({ leads, onLeadClick, onRefresh, csrfToken }: Kanban
       ))}
     </div>
   );
+}
+
+async function getErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    if (typeof data?.error === 'string' && data.error.length > 0) {
+      return data.error;
+    }
+  } catch {
+    // Ignore JSON parse errors and fall through.
+  }
+
+  return response.statusText || 'Unknown error';
 }
 
 interface KanbanColumnProps {

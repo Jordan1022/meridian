@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +25,7 @@ interface LeadDrawerProps {
   onClose: () => void;
   onRefresh: () => void;
   csrfToken: string;
+  onMutationError: (message: string | null) => void;
 }
 
 const STAGES = ['New', 'Qualified', 'Call_Scheduled', 'Proposal_Sent', 'Negotiation', 'Won', 'Lost'];
@@ -39,11 +40,13 @@ const CHANNEL_ICONS: Record<string, string> = {
   other: '📝',
 };
 
-export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: LeadDrawerProps) {
+export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMutationError }: LeadDrawerProps) {
   const [touches, setTouches] = useState<Touch[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isNewLead, setIsNewLead] = useState(false);
   const [isAddingTouch, setIsAddingTouch] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const touchRequestRef = useRef(0);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -67,6 +70,9 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
 
   useEffect(() => {
     if (lead) {
+      setIsEditing(false);
+      setIsAddingTouch(false);
+      setSubmitError(null);
       setFormData({
         name: lead.name,
         email: lead.email || '',
@@ -78,10 +84,19 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
         nextAction: lead.nextAction || '',
         nextActionAt: lead.nextActionAt ? lead.nextActionAt.slice(0, 16) : '',
       });
+      setTouchForm({
+        channel: 'email',
+        summary: '',
+        nextAction: '',
+        nextActionAt: '',
+      });
       setIsNewLead(false);
-      fetchTouches();
+      fetchTouches(lead.id);
     } else if (isOpen) {
       // New lead mode
+      setIsEditing(false);
+      setIsAddingTouch(false);
+      setSubmitError(null);
       setFormData({
         name: '',
         email: '',
@@ -98,21 +113,32 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
     }
   }, [lead, isOpen]);
 
-  async function fetchTouches() {
-    if (!lead) return;
+  async function fetchTouches(leadId: string) {
+    const requestId = ++touchRequestRef.current;
     try {
-      const response = await fetch(`/api/leads/${lead.id}`);
+      const response = await fetch(`/api/leads/${leadId}`);
       if (response.ok) {
         const data = await response.json();
+        if (requestId !== touchRequestRef.current) return;
         setTouches(data.lead.touches || []);
       }
     } catch (error) {
+      if (requestId !== touchRequestRef.current) return;
       console.error('Failed to fetch touches:', error);
     }
   }
 
   async function handleSave() {
     try {
+      if (!csrfToken) {
+        const message = 'Session is still initializing. Please wait a moment and try again.';
+        setSubmitError(message);
+        onMutationError(message);
+        return;
+      }
+
+      setSubmitError(null);
+      onMutationError(null);
       const nextActionAtIso = toIsoDateTimeOrNull(formData.nextActionAt);
       const payload = {
         name: formData.name,
@@ -136,7 +162,12 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
 
         if (response.ok) {
           onRefresh();
+          onMutationError(null);
           onClose();
+        } else {
+          const message = `Failed to create lead (${response.status}): ${await getErrorMessage(response)}`;
+          setSubmitError(message);
+          onMutationError(message);
         }
       } else if (lead) {
         const response = await fetch(`/api/leads/${lead.id}`, {
@@ -147,10 +178,18 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
 
         if (response.ok) {
           onRefresh();
+          onMutationError(null);
           setIsEditing(false);
+        } else {
+          const message = `Failed to save lead (${response.status}): ${await getErrorMessage(response)}`;
+          setSubmitError(message);
+          onMutationError(message);
         }
       }
     } catch (error) {
+      const message = 'Failed to save lead due to a network error.';
+      setSubmitError(message);
+      onMutationError(message);
       console.error('Failed to save lead:', error);
     }
   }
@@ -159,6 +198,22 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
     if (!lead) return;
 
     try {
+      if (!csrfToken) {
+        const message = 'Session is still initializing. Please wait a moment and try again.';
+        setSubmitError(message);
+        onMutationError(message);
+        return;
+      }
+
+      if (!touchForm.summary.trim()) {
+        const message = 'Touch summary is required.';
+        setSubmitError(message);
+        onMutationError(message);
+        return;
+      }
+
+      setSubmitError(null);
+      onMutationError(null);
       const nextActionAtIso = toIsoDateTimeOrNull(touchForm.nextActionAt);
 
       const response = await fetch(`/api/leads/${lead.id}/touches`, {
@@ -176,10 +231,17 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
       if (response.ok) {
         setTouchForm({ channel: 'email', summary: '', nextAction: '', nextActionAt: '' });
         setIsAddingTouch(false);
-        fetchTouches();
+        fetchTouches(lead.id);
         onRefresh();
+      } else {
+        const message = `Failed to log touch (${response.status}): ${await getErrorMessage(response)}`;
+        setSubmitError(message);
+        onMutationError(message);
       }
     } catch (error) {
+      const message = 'Failed to log touch due to a network error.';
+      setSubmitError(message);
+      onMutationError(message);
       console.error('Failed to add touch:', error);
     }
   }
@@ -193,6 +255,8 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
     Won: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     Lost: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   };
+  const canSaveLead = Boolean(csrfToken) && formData.name.trim().length > 0;
+  const canLogTouch = Boolean(csrfToken) && touchForm.summary.trim().length > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -329,7 +393,7 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
             {isNewLead ? (
               <>
                 <Button variant="ghost" onClick={onClose}>Cancel</Button>
-                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90">
+                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90" disabled={!canSaveLead}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Lead
                 </Button>
@@ -340,7 +404,7 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
                   <X className="w-4 h-4 mr-2" />
                   Cancel
                 </Button>
-                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90">
+                <Button onClick={handleSave} className="bg-primary hover:bg-primary/90" disabled={!canSaveLead}>
                   <Save className="w-4 h-4 mr-2" />
                   Save Changes
                 </Button>
@@ -355,6 +419,9 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
               </>
             )}
           </div>
+          {submitError && (
+            <p className="text-sm text-red-400">{submitError}</p>
+          )}
 
           {/* Touch History (only for existing leads) */}
           {!isNewLead && (
@@ -431,7 +498,7 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
                       />
                     </div>
                   </div>
-                  <Button onClick={handleAddTouch} size="sm" className="bg-primary hover:bg-primary/90">
+                  <Button onClick={handleAddTouch} size="sm" className="bg-primary hover:bg-primary/90" disabled={!canLogTouch}>
                     <Plus className="w-4 h-4 mr-2" />
                     Log Touch
                   </Button>
@@ -476,6 +543,19 @@ function toIsoDateTimeOrNull(value: string): string | null {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
+}
+
+async function getErrorMessage(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    if (typeof data?.error === 'string' && data.error.length > 0) {
+      return data.error;
+    }
+  } catch {
+    // Ignore JSON parse errors and fall through.
+  }
+
+  return response.statusText || 'Unknown error';
 }
 
 function toNullIfEmpty(value: string): string | null {

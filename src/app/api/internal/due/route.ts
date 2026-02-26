@@ -3,6 +3,11 @@ import { db } from '@/lib/db';
 import { leads } from '@/lib/schema';
 import { verifyToken } from '@/lib/internal-auth';
 import { lte, gte, and, isNotNull } from 'drizzle-orm';
+import { z } from 'zod';
+
+const internalDueQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(7),
+});
 
 // GET /api/internal/due?days=7
 export async function GET(request: NextRequest) {
@@ -14,7 +19,18 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const days = parseInt(searchParams.get('days') || '7', 10);
+    const queryResult = internalDueQuerySchema.safeParse({
+      days: searchParams.get('days') ?? '7',
+    });
+
+    if (!queryResult.success) {
+      return NextResponse.json(
+        { error: 'Invalid query parameters', details: queryResult.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const { days } = queryResult.data;
 
     const now = new Date();
     const future = new Date();

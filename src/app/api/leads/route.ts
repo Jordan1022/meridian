@@ -4,8 +4,15 @@ import { leads } from '@/lib/schema';
 import { requireAuth, getSession } from '@/lib/auth';
 import { createLeadSchema } from '@/lib/schema-validation';
 import { and, eq, ilike, gte, lte } from 'drizzle-orm';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
+
+const listLeadsQuerySchema = z.object({
+  stage: z.string().optional(),
+  q: z.string().max(255).optional(),
+  due: z.enum(['week']).optional(),
+});
 
 // GET /api/leads?stage=&q=&due=
 export async function GET(request: NextRequest) {
@@ -13,14 +20,31 @@ export async function GET(request: NextRequest) {
     await requireAuth(request);
 
     const { searchParams } = new URL(request.url);
-    const stage = searchParams.get('stage');
-    const q = searchParams.get('q');
-    const due = searchParams.get('due');
+    const queryResult = listLeadsQuerySchema.safeParse({
+      stage: searchParams.get('stage') || undefined,
+      q: searchParams.get('q') || undefined,
+      due: searchParams.get('due') || undefined,
+    });
+
+    if (!queryResult.success) {
+      return NextResponse.json(
+        { error: 'Invalid query parameters', details: queryResult.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const { stage, q, due } = queryResult.data;
 
     // Build query
     let conditions = [];
 
     if (stage && stage !== 'all') {
+      if (!leads.stage.enumValues.includes(stage as typeof leads.stage.enumValues[number])) {
+        return NextResponse.json(
+          { error: 'Invalid stage filter' },
+          { status: 400 }
+        );
+      }
       // Cast to proper enum type - validated at runtime by the database
       conditions.push(eq(leads.stage, stage as typeof leads.stage.enumValues[number]));
     }
