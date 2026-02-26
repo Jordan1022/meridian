@@ -1,29 +1,23 @@
 import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
+import * as bcrypt from 'bcryptjs';
 import { db } from './db';
 import { users } from './schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
-async function getArgon2() {
-  return import('argon2');
-}
-
-// Password hashing with Argon2id
+// Password hashing with bcryptjs (portable across serverless runtimes)
 export async function hashPassword(password: string): Promise<string> {
-  const argon2 = await getArgon2();
-  return argon2.hash(password, {
-    type: argon2.argon2id,
-    memoryCost: 65536,
-    timeCost: 3,
-    parallelism: 4,
-  });
+  return bcrypt.hash(password, 12);
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const argon2 = await getArgon2();
-  return argon2.verify(hash, password);
+  if (!hash.startsWith('$2a$') && !hash.startsWith('$2b$') && !hash.startsWith('$2y$')) {
+    return false;
+  }
+
+  return bcrypt.compare(password, hash);
 }
 
 // Generate CSRF token
@@ -45,16 +39,48 @@ export function deriveCsrfToken(seed: string): string {
 
 // Verify user credentials
 export async function verifyUser(email: string, password: string): Promise<{ id: string; email: string } | null> {
+  const normalizedEmail = email.toLowerCase().trim();
   const user = await db.query.users.findFirst({
-    where: eq(users.email, email.toLowerCase().trim()),
+    where: eq(users.email, normalizedEmail),
   });
 
-  if (!user) return null;
+  if (user) {
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (valid) {
+      return { id: user.id, email: user.email };
+    }
+  }
 
-  const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) return null;
+  const bootstrapEmail = process.env.BOOTSTRAP_EMAIL?.toLowerCase().trim();
+  const bootstrapPassword = process.env.BOOTSTRAP_PASSWORD;
+  const isBootstrapLogin =
+    !!bootstrapEmail &&
+    !!bootstrapPassword &&
+    normalizedEmail === bootstrapEmail &&
+    password === bootstrapPassword;
 
-  return { id: user.id, email: user.email };
+  if (!isBootstrapLogin) {
+    return null;
+  }
+
+  const newHash = await hashPassword(password);
+
+  // If we found a user but bcrypt verification failed, migrate to bcrypt using bootstrap creds.
+  if (user) {
+    await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, user.id));
+    return { id: user.id, email: user.email };
+  }
+
+  // If user doesn't exist yet, bootstrap-create it.
+  const [createdUser] = await db
+    .insert(users)
+    .values({
+      email: normalizedEmail,
+      passwordHash: newHash,
+    })
+    .returning();
+
+  return { id: createdUser.id, email: createdUser.email };
 }
 
 // Verify NextAuth JWT session
