@@ -113,16 +113,25 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
 
   async function handleSave() {
     try {
+      const nextActionAtIso = toIsoDateTimeOrNull(formData.nextActionAt);
+      const payload = {
+        name: formData.name,
+        email: toNullIfEmpty(formData.email),
+        company: toNullIfEmpty(formData.company),
+        source: toNullIfEmpty(formData.source),
+        stage: formData.stage,
+        value: formData.value ? parseInt(formData.value, 10) : null,
+        notes: toNullIfEmpty(formData.notes),
+        nextAction: toNullIfEmpty(formData.nextAction),
+        nextActionAt: nextActionAtIso,
+        csrfToken,
+      };
+
       if (isNewLead) {
         const response = await fetch('/api/leads', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...formData,
-            value: formData.value ? parseInt(formData.value) : null,
-            nextActionAt: formData.nextActionAt || null,
-            csrfToken,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (response.ok) {
@@ -133,12 +142,7 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
         const response = await fetch(`/api/leads/${lead.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...formData,
-            value: formData.value ? parseInt(formData.value) : null,
-            nextActionAt: formData.nextActionAt || null,
-            csrfToken,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (response.ok) {
@@ -155,6 +159,8 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
     if (!lead) return;
 
     try {
+      const nextActionAtIso = toIsoDateTimeOrNull(touchForm.nextActionAt);
+
       const response = await fetch(`/api/leads/${lead.id}/touches`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,7 +168,7 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
           channel: touchForm.channel,
           summary: touchForm.summary,
           nextAction: touchForm.nextAction || null,
-          nextActionAt: touchForm.nextActionAt || null,
+          nextActionAt: nextActionAtIso,
           csrfToken,
         }),
       });
@@ -463,6 +469,18 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken }: Lead
       </DialogContent>
     </Dialog>
   );
+}
+
+function toIsoDateTimeOrNull(value: string): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+function toNullIfEmpty(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function FormField({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
