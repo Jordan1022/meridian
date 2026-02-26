@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
 import * as bcrypt from 'bcryptjs';
+import { argon2Verify } from 'hash-wasm';
 import { db } from './db';
 import { users } from './schema';
 import { eq } from 'drizzle-orm';
@@ -13,11 +14,15 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  if (!hash.startsWith('$2a$') && !hash.startsWith('$2b$') && !hash.startsWith('$2y$')) {
-    return false;
+  if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
+    return bcrypt.compare(password, hash);
   }
 
-  return bcrypt.compare(password, hash);
+  if (hash.startsWith('$argon2')) {
+    return argon2Verify({ password, hash });
+  }
+
+  return false;
 }
 
 // Generate CSRF token
@@ -47,6 +52,11 @@ export async function verifyUser(email: string, password: string): Promise<{ id:
   if (user) {
     const valid = await verifyPassword(password, user.passwordHash);
     if (valid) {
+      // Opportunistic migration to bcrypt after successful non-bcrypt verification.
+      if (!user.passwordHash.startsWith('$2a$') && !user.passwordHash.startsWith('$2b$') && !user.passwordHash.startsWith('$2y$')) {
+        const newHash = await hashPassword(password);
+        await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, user.id));
+      }
       return { id: user.id, email: user.email };
     }
   }
