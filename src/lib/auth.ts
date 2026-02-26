@@ -1,14 +1,18 @@
 import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { NextResponse } from 'next/server';
-import * as argon2 from 'argon2';
 import { db } from './db';
 import { users } from './schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
+async function getArgon2() {
+  return import('argon2');
+}
+
 // Password hashing with Argon2id
 export async function hashPassword(password: string): Promise<string> {
+  const argon2 = await getArgon2();
   return argon2.hash(password, {
     type: argon2.argon2id,
     memoryCost: 65536,
@@ -18,6 +22,7 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const argon2 = await getArgon2();
   return argon2.verify(hash, password);
 }
 
