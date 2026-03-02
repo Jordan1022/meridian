@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { leads } from '@/lib/schema';
 import { requireAuth, getSession } from '@/lib/auth';
 import { createLeadSchema } from '@/lib/schema-validation';
-import { and, eq, ilike, gte, lte } from 'drizzle-orm';
+import { and, eq, ilike, gte, lte, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +12,7 @@ const listLeadsQuerySchema = z.object({
   stage: z.string().optional(),
   q: z.string().max(255).optional(),
   due: z.enum(['week']).optional(),
+  includeArchived: z.enum(['true', 'false']).optional(),
 });
 
 // GET /api/leads?stage=&q=&due=
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
       stage: searchParams.get('stage') || undefined,
       q: searchParams.get('q') || undefined,
       due: searchParams.get('due') || undefined,
+      includeArchived: searchParams.get('includeArchived') || undefined,
     });
 
     if (!queryResult.success) {
@@ -33,10 +35,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { stage, q, due } = queryResult.data;
+    const { stage, q, due, includeArchived } = queryResult.data;
 
     // Build query
     let conditions = [];
+
+    if (includeArchived !== 'true') {
+      conditions.push(isNull(leads.archivedAt));
+    }
 
     if (stage && stage !== 'all') {
       if (!leads.stage.enumValues.includes(stage as typeof leads.stage.enumValues[number])) {

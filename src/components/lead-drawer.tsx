@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Edit2, Save, X, Plus, History, User, Building2, Mail, Tag, DollarSign, FileText, Calendar, CheckCircle2 } from 'lucide-react';
+import { Edit2, Save, X, Plus, History, User, Building2, Mail, Tag, DollarSign, FileText, Calendar, CheckCircle2, Archive } from 'lucide-react';
 import type { Lead, Touch } from '@/types';
 
 interface LeadDrawerProps {
@@ -39,12 +39,14 @@ const CHANNEL_ICONS: Record<string, string> = {
   meeting: '🤝',
   other: '📝',
 };
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMutationError }: LeadDrawerProps) {
   const [touches, setTouches] = useState<Touch[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isNewLead, setIsNewLead] = useState(false);
   const [isAddingTouch, setIsAddingTouch] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const touchRequestRef = useRef(0);
 
@@ -69,7 +71,7 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMuta
   });
 
   useEffect(() => {
-    if (lead) {
+    if (lead && isOpen) {
       setIsEditing(false);
       setIsAddingTouch(false);
       setSubmitError(null);
@@ -114,6 +116,13 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMuta
   }, [lead, isOpen]);
 
   async function fetchTouches(leadId: string) {
+    if (!UUID_PATTERN.test(leadId)) {
+      const message = 'Invalid lead id.';
+      setSubmitError(message);
+      onMutationError(message);
+      return;
+    }
+
     const requestId = ++touchRequestRef.current;
     try {
       const response = await fetch(`/api/leads/${leadId}`);
@@ -121,9 +130,17 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMuta
         const data = await response.json();
         if (requestId !== touchRequestRef.current) return;
         setTouches(data.lead.touches || []);
+      } else {
+        const message = `Failed to load lead details (${response.status}): ${await getErrorMessage(response)}`;
+        if (requestId !== touchRequestRef.current) return;
+        setSubmitError(message);
+        onMutationError(message);
       }
     } catch (error) {
       if (requestId !== touchRequestRef.current) return;
+      const message = 'Failed to load lead details due to a network error.';
+      setSubmitError(message);
+      onMutationError(message);
       console.error('Failed to fetch touches:', error);
     }
   }
@@ -243,6 +260,49 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMuta
       setSubmitError(message);
       onMutationError(message);
       console.error('Failed to add touch:', error);
+    }
+  }
+
+  async function handleArchive() {
+    if (!lead) return;
+
+    try {
+      if (!csrfToken) {
+        const message = 'Session is still initializing. Please wait a moment and try again.';
+        setSubmitError(message);
+        onMutationError(message);
+        return;
+      }
+
+      const confirmed = window.confirm(`Archive "${lead.name}"? This removes it from active views.`);
+      if (!confirmed) return;
+
+      setIsArchiving(true);
+      setSubmitError(null);
+      onMutationError(null);
+
+      const response = await fetch(`/api/leads/${lead.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csrfToken }),
+      });
+
+      if (response.ok) {
+        onRefresh();
+        onClose();
+        return;
+      }
+
+      const message = `Failed to archive lead (${response.status}): ${await getErrorMessage(response)}`;
+      setSubmitError(message);
+      onMutationError(message);
+    } catch (error) {
+      const message = 'Failed to archive lead due to a network error.';
+      setSubmitError(message);
+      onMutationError(message);
+      console.error('Failed to archive lead:', error);
+    } finally {
+      setIsArchiving(false);
     }
   }
 
@@ -412,6 +472,14 @@ export function LeadDrawer({ lead, isOpen, onClose, onRefresh, csrfToken, onMuta
             ) : (
               <>
                 <Button variant="ghost" onClick={onClose}>Close</Button>
+                <Button
+                  onClick={handleArchive}
+                  variant="destructive"
+                  disabled={!csrfToken || isArchiving}
+                >
+                  <Archive className="w-4 h-4 mr-2" />
+                  {isArchiving ? 'Archiving...' : 'Archive Lead'}
+                </Button>
                 <Button onClick={() => setIsEditing(true)} variant="outline">
                   <Edit2 className="w-4 h-4 mr-2" />
                   Edit Lead

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { leads } from '@/lib/schema';
 import { verifyToken } from '@/lib/internal-auth';
-import { lte, gte, and, isNotNull } from 'drizzle-orm';
+import { lte, gte, and, isNotNull, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 const internalDueQuerySchema = z.object({
@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
 
     const dueLeads = await db.query.leads.findMany({
       where: and(
+        isNull(leads.archivedAt),
         isNotNull(leads.nextActionAt),
         gte(leads.nextActionAt, now),
         lte(leads.nextActionAt, future)

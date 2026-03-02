@@ -3,7 +3,13 @@ import { db } from '@/lib/db';
 import { leads, touches } from '@/lib/schema';
 import { requireAuth, getSession } from '@/lib/auth';
 import { updateLeadSchema } from '@/lib/schema-validation';
-import { eq, desc } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+
+const leadIdSchema = z.string().uuid();
+const csrfBodySchema = z.object({
+  csrfToken: z.string().min(1),
+});
 
 // GET /api/leads/[id]
 export async function GET(
@@ -12,21 +18,27 @@ export async function GET(
 ) {
   try {
     await requireAuth(request);
+    const leadIdResult = leadIdSchema.safeParse(params.id);
+    if (!leadIdResult.success) {
+      return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
+    }
+
+    const leadId = leadIdResult.data;
 
     const lead = await db.query.leads.findFirst({
-      where: eq(leads.id, params.id),
-      with: {
-        touches: {
-          orderBy: desc(touches.createdAt),
-        },
-      },
+      where: eq(leads.id, leadId),
     });
 
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ lead });
+    const leadTouches = await db.query.touches.findMany({
+      where: eq(touches.leadId, leadId),
+      orderBy: (touches, { desc }) => [desc(touches.createdAt)],
+    });
+
+    return NextResponse.json({ lead: { ...lead, touches: leadTouches } });
   } catch (error) {
     console.error('Get lead error:', error);
     
@@ -49,6 +61,12 @@ export async function PATCH(
   try {
     await requireAuth(request);
     const session = await getSession(request);
+    const leadIdResult = leadIdSchema.safeParse(params.id);
+    if (!leadIdResult.success) {
+      return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
+    }
+
+    const leadId = leadIdResult.data;
 
     const body = await request.json();
 
@@ -70,7 +88,7 @@ export async function PATCH(
 
     // Check if lead exists
     const existing = await db.query.leads.findFirst({
-      where: eq(leads.id, params.id),
+      where: eq(leads.id, leadId),
     });
 
     if (!existing) {
@@ -97,7 +115,7 @@ export async function PATCH(
     const [updated] = await db
       .update(leads)
       .set(update)
-      .where(eq(leads.id, params.id))
+      .where(eq(leads.id, leadId))
       .returning();
 
     return NextResponse.json({ lead: updated });
@@ -108,6 +126,62 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/leads/[id] (soft archive)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await requireAuth(request);
+    const session = await getSession(request);
+    const leadIdResult = leadIdSchema.safeParse(params.id);
+    if (!leadIdResult.success) {
+      return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
+    }
+
+    const leadId = leadIdResult.data;
+    const body = await request.json().catch(() => null);
+    const csrfResult = csrfBodySchema.safeParse(body);
+    if (!csrfResult.success || csrfResult.data.csrfToken !== session.csrfToken) {
+      return NextResponse.json({ error: 'Invalid CSRF token' }, { status: 403 });
+    }
+
+    const existing = await db.query.leads.findFirst({
+      where: eq(leads.id, leadId),
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 });
+    }
+
+    if (existing.archivedAt) {
+      return NextResponse.json({ lead: existing });
+    }
+
+    const [archived] = await db
+      .update(leads)
+      .set({
+        archivedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(leads.id, leadId))
+      .returning();
+
+    return NextResponse.json({ lead: archived });
+  } catch (error) {
+    console.error('Archive lead error:', error);
+
+    if ((error as Error).message === 'Unauthorized') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -30,6 +30,7 @@ export const leads = pgTable('leads', {
   stage: stageEnum('stage').notNull().default('New'),
   value: integer('value'),
   notes: text('notes'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   lastTouchAt: timestamp('last_touch_at', { withTimezone: true }),
   nextAction: text('next_action'),
   nextActionAt: timestamp('next_action_at', { withTimezone: true }),

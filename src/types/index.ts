@@ -9,6 +9,7 @@ export interface Lead {
   stage: string;
   value: number | null;
   notes: string | null;
+  archivedAt: string | null;
   nextAction: string | null;
   nextActionAt: string | null;
   createdAt: string;
