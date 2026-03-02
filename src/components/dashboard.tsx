@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { format, isPast, isToday, isTomorrow } from 'date-fns';
 import { LogOut, Grid3X3, Table as TableIcon, Plus, Clock, AlertCircle, Calendar, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Lead } from '@/types';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 const STAGES = [
   'New',
@@ -48,7 +49,10 @@ export function Dashboard() {
 
   async function fetchCsrfToken() {
     try {
-      const response = await fetch('/api/auth/me');
+      const response = await fetch('/api/auth/me', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
       if (response.ok) {
         const data = await response.json();
         setCsrfToken(data.csrfToken);
@@ -186,6 +190,7 @@ export function Dashboard() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               <Button
                 onClick={handleAddLead}
                 size="sm"
