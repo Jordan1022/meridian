@@ -8,6 +8,18 @@ import { users } from './schema';
 import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
+async function getTokenSafe(req: NextRequest) {
+  try {
+    return await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
+  } catch (error) {
+    console.error('Session token decode failed:', error);
+    return null;
+  }
+}
+
 // Password hashing with bcryptjs (portable across serverless runtimes)
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -95,10 +107,7 @@ export async function verifyUser(email: string, password: string): Promise<{ id:
 
 // Verify NextAuth JWT session
 export async function requireAuth(req: NextRequest): Promise<{ userId: string; email: string }> {
-  const token = await getToken({ 
-    req, 
-    secret: process.env.NEXTAUTH_SECRET 
-  });
+  const token = await getTokenSafe(req);
   
   const userId = (token?.id as string | undefined) ?? token?.sub;
 
@@ -111,10 +120,7 @@ export async function requireAuth(req: NextRequest): Promise<{ userId: string; e
 
 // Get session (for internal use)
 export async function getSession(req: NextRequest) {
-  const token = await getToken({ 
-    req, 
-    secret: process.env.NEXTAUTH_SECRET 
-  });
+  const token = await getTokenSafe(req);
 
   const userId = (token?.id as string | undefined) ?? token?.sub;
   
