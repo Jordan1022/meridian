@@ -117,12 +117,12 @@ export async function getSession(req: NextRequest) {
   });
 
   const userId = (token?.id as string | undefined) ?? token?.sub;
-  const csrfSeed = token ? (token as { jti?: string }).jti ?? userId : undefined;
   
   return {
     userId,
     email: token?.email,
-    csrfToken: csrfSeed ? deriveCsrfToken(csrfSeed) : null,
+    // Use userId as a stable CSRF seed to avoid token churn mismatches.
+    csrfToken: userId ? deriveCsrfToken(userId) : null,
   };
 }
 
