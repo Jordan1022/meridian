@@ -1,4 +1,8 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+// Load .env then .env.local; override so vercel-pulled .env.local wins
+dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
