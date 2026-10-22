@@ -16,7 +16,7 @@ const leadIdSchema = z.string().uuid();
 // POST /api/internal/leads/[id]/touches
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Verify token
@@ -24,7 +24,8 @@ export async function POST(
     if (!token || !(await verifyToken(token))) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const leadIdResult = leadIdSchema.safeParse(params.id);
+    const { id } = await params;
+    const leadIdResult = leadIdSchema.safeParse(id);
     if (!leadIdResult.success) {
       return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
     }

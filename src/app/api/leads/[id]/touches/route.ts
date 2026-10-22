@@ -11,12 +11,13 @@ const leadIdSchema = z.string().uuid();
 // POST /api/leads/[id]/touches
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
     const session = await getSession(request);
-    const leadIdResult = leadIdSchema.safeParse(params.id);
+    const { id } = await params;
+    const leadIdResult = leadIdSchema.safeParse(id);
     if (!leadIdResult.success) {
       return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
     }

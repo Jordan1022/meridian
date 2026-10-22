@@ -14,11 +14,12 @@ const csrfBodySchema = z.object({
 // GET /api/leads/[id]
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
-    const leadIdResult = leadIdSchema.safeParse(params.id);
+    const { id } = await params;
+    const leadIdResult = leadIdSchema.safeParse(id);
     if (!leadIdResult.success) {
       return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
     }
@@ -56,12 +57,13 @@ export async function GET(
 // PATCH /api/leads/[id]
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
     const session = await getSession(request);
-    const leadIdResult = leadIdSchema.safeParse(params.id);
+    const { id } = await params;
+    const leadIdResult = leadIdSchema.safeParse(id);
     if (!leadIdResult.success) {
       return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
     }
@@ -136,12 +138,13 @@ export async function PATCH(
 // DELETE /api/leads/[id] (soft archive)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth(request);
     const session = await getSession(request);
-    const leadIdResult = leadIdSchema.safeParse(params.id);
+    const { id } = await params;
+    const leadIdResult = leadIdSchema.safeParse(id);
     if (!leadIdResult.success) {
       return NextResponse.json({ error: 'Invalid lead id' }, { status: 400 });
     }
